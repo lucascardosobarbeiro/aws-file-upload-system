@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AWS File Upload System</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #0066ff;
+            --success-color: #00c853;
+            --error-color: #ff3d00;
+            --background-color: #f8f9fa;
+            --card-background: #ffffff;
+            --border-color: #e0e0e0;
+            --text-primary: #2c3e50;
+            --text-secondary: #666666;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: var(--background-color);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            color: var(--primary-color);
+            margin-bottom: 1rem;
+        }
+
+        .header p {
+            color: var(--text-secondary);
+        }
+
+        .upload-card {
+            background: var(--card-background);
+            border-radius: 12px;
+            padding: 2rem;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+        }
+
+        .drop-zone {
+            border: 2px dashed var(--primary-color);
+            border-radius: 8px;
+            padding: 2rem;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            background: rgba(0, 102, 255, 0.03);
+        }
+
+        .drop-zone.dragover {
+            background: rgba(0, 102, 255, 0.1);
+            border-color: var(--success-color);
+        }
+
+        .drop-zone p {
+            margin: 1rem 0;
+            color: var(--text-secondary);
+        }
+
+        .file-input {
+            display: none;
+        }
+
+        .select-button {
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 0.8rem 2rem;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background 0.3s;
+        }
+
+        .select-button:hover {
+            background: #0052cc;
+        }
+
+        .progress {
+            margin-top: 1rem;
+            background: var(--background-color);
+            height: 8px;
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .progress-bar {
+            width: 0%;
+            height: 100%;
+            background: var(--primary-color);
+            transition: width 0.3s;
+        }
+
+        .file-list {
+            margin-top: 2rem;
+        }
+
+        .file-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem;
+            background: var(--card-background);
+            border-radius: 8px;
+            margin-bottom: 0.5rem;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+        }
+
+        .file-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .file-status {
+            padding: 0.4rem 1rem;
+            border-radius: 20px;
+            font-size: 0.875rem;
+        }
+
+        .status-waiting {
+            background: rgba(0, 102, 255, 0.1);
+            color: var(--primary-color);
+        }
+
+        .status-success {
+            background: rgba(0, 200, 83, 0.1);
+            color: var(--success-color);
+        }
+
+        .status-error {
+            background: rgba(255, 61, 0, 0.1);
+            color: var(--error-color);
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>Upload de Arquivos</h1>
+            <p>Arraste ou selecione seus arquivos para fazer upload</p>
+        </header>
+
+        <div class="upload-card">
+            <div class="drop-zone" id="dropZone">
+                <p>📁 Arraste seus arquivos aqui</p>
+                <p>ou</p>
+                <input type="file" id="fileInput" class="file-input" multiple>
+                <button class="select-button" onclick="document.getElementById('fileInput').click()">
+                    Selecionar Arquivos
+                </button>
+            </div>
+
+            <div class="progress">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+        </div>
+
+        <div class="file-list" id="fileList"></div>
+    </div>
+
+    <script>
+        const API_ENDPOINT = 'https://0gk9kvxd90.execute-api.us-east-1.amazonaws.com/prod/upload';
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const progressBar = document.getElementById('progressBar');
+        const fileList = document.getElementById('fileList');
+
+        // Previne comportamento padrão de drag e drop
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+            dropZone.addEventListener(eventName, preventDefaults, false);
+            document.body.addEventListener(eventName, preventDefaults, false);
+        });
+
+        function preventDefaults(e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        // Adiciona efeito visual durante o drag
+        dropZone.addEventListener('dragenter', () => dropZone.classList.add('dragover'));
+        dropZone.addEventListener('dragover', () => dropZone.classList.add('dragover'));
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', (e) => {
+            dropZone.classList.remove('dragover');
+            const files = e.dataTransfer.files;
+            handleFiles(files);
+        });
+
+        // Manipula seleção de arquivos pelo input
+        fileInput.addEventListener('change', (e) => handleFiles(e.target.files));
+
+        function handleFiles(files) {
+            files = Array.from(files);
+            files.forEach(file => {
+                addFileToList(file);
+                uploadFile(file);
+            });
+        }
+
+        function addFileToList(file) {
+            const fileItem = document.createElement('div');
+            fileItem.className = 'file-item';
+            fileItem.innerHTML = `
+                <div class="file-info">
+                    <span>📄</span>
+                    <span>${file.name}</span>
+                </div>
+                <span class="file-status status-waiting" id="status-${file.name.replace(/[^a-z0-9]/gi, '_')}">
+                    Aguardando...
+                </span>
+            `;
+            fileList.insertBefore(fileItem, fileList.firstChild);
+        }
+
+        async function uploadFile(file) {
+            const statusElement = document.getElementById(`status-${file.name.replace(/[^a-z0-9]/gi, '_')}`);
+            
+            try {
+                // Obtém URL pré-assinada
+                const response = await fetch(API_ENDPOINT, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        fileName: file.name,
+                        fileType: file.type || 'application/octet-stream'
+                    })
+                });
+
+                if (!response.ok) throw new Error('Erro ao obter URL de upload');
+                
+                const { uploadURL } = await response.json();
+                if (!uploadURL) throw new Error('URL de upload não recebida');
+
+                // Upload para S3
+                const uploadResponse = await fetch(uploadURL, {
+                    method: 'PUT',
+                    body: file,
+                    headers: {
+                        'Content-Type': file.type || 'application/octet-stream'
+                    }
+                });
+
+                if (!uploadResponse.ok) throw new Error('Falha no upload');
+
+                statusElement.textContent = 'Upload concluído!';
+                statusElement.className = 'file-status status-success';
+                progressBar.style.width = '100%';
+
+            } catch (error) {
+                console.error('Erro:', error);
+                statusElement.textContent = `Erro: ${error.message}`;
+                statusElement.className = 'file-status status-error';
+            }
+        }
+    </script>
+</body>
+</html>
